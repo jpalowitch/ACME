@@ -16,6 +16,8 @@
 #                  'cvrts'   - toy covariate data
 #                  'snploc'  - dummy SNP locations
 #                  'geneloc' - dummy gene locations
+#   fmat - if TRUE, will save data to filematrices. Otherwise, saves to 
+#          text files. (default = FALSE)
 #   verbose - whether or not to print SNP filematrix writing progress
 #             (default = FALSE)
 #-------------------------------------------------------------------------------
@@ -23,7 +25,7 @@
 require(filematrix)
 
 make_eQTL_data <- function (n, ngene = 1000, nsnp = 10000, ncov = 10, p = 0.2, 
-                            saveDir = getwd(), returnData = FALSE, 
+                            saveDir = getwd(), returnData = FALSE, fmat = FALSE,
                             verbose = FALSE) { 
   
   if (ngene > nsnp)
@@ -72,94 +74,119 @@ make_eQTL_data <- function (n, ngene = 1000, nsnp = 10000, ncov = 10, p = 0.2,
   gene_t1 <- genes[usable_genes, ]
   log_reads <- log(1 + genes)
   
-  # get single number locations: gene_loc, snps_loc
-  {
-    chrset = unique(c(unique(geneloc$chrm_probe), unique(snpsloc$chrm_probe)));
-    geneloc$commonchr = match(geneloc$chrm_probe,   chrset, nomatch = -1L);
-    snpsloc$commonchr = match(snpsloc$chrm_snp, chrset, nomatch = -2L);
+  if (!fmat) {
     
-    maxpos = 1e9;
-    # maxpos = max( diff(range(geneloc$s1)), diff(range(snpsloc$pos)) ) + 1;
+    # Making directory for txtfiles and going there
+    if (!dir.exists(file.path(saveDir, "txtfiles"))) {
+      dir.create(file.path(saveDir, "txtfiles"))
+    }
     
-    geneloc$singlepos = geneloc$commonchr*maxpos + geneloc$s1;
-    snpsloc$singlepos = snpsloc$commonchr*maxpos + snpsloc$pos;
+    write.table(geneloc, file = file.path(saveDir, "txtfiles", "gene_loc.txt"),
+                quote = FALSE, row.names = TRUE, col.names = TRUE, sep = "\t")
     
-    mch = match(rownames(log_reads), geneloc$geneid, nomatch = 0L)
-    stopifnot(all(mch != 0L))
-    gene_loc = geneloc$singlepos[mch];
-    rm(mch);
+    write.table(snpsloc, file = file.path(saveDir, "txtfiles", "snps_loc.txt"),
+                quote = FALSE, row.names = TRUE, col.names = TRUE, sep = "\t")
     
-    mch = match(rownames(snps), snpsloc$SNP, nomatch = 0L)
-    stopifnot(all(mch != 0L))
-    snps_loc = snpsloc$singlepos[mch];
-    rm(mch);
+    write.table(genes, file = file.path(saveDir, "txtfiles", "gene.txt"),
+                quote = FALSE, row.names = TRUE, col.names = TRUE, sep = "\t")
     
-    rm(maxpos, chrset);
+    write.table(snps, file = file.path(saveDir, "txtfiles", "snps.txt"),
+                quote = FALSE, row.names = TRUE, col.names = TRUE, sep = "\t")
+    
+    write.table(cvrts, file = file.path(saveDir, "txtfiles", "cvrt.txt"),
+                quote = FALSE, row.names = TRUE, col.names = TRUE, sep = "\t")
+    
+  } else {
+    
+    # get single number locations: gene_loc, snps_loc
+    {
+      chrset = unique(c(unique(geneloc$chrm_probe), unique(snpsloc$chrm_probe)));
+      geneloc$commonchr = match(geneloc$chrm_probe,   chrset, nomatch = -1L);
+      snpsloc$commonchr = match(snpsloc$chrm_snp, chrset, nomatch = -2L);
+      
+      maxpos = 1e9;
+      # maxpos = max( diff(range(geneloc$s1)), diff(range(snpsloc$pos)) ) + 1;
+      
+      geneloc$singlepos = geneloc$commonchr*maxpos + geneloc$s1;
+      snpsloc$singlepos = snpsloc$commonchr*maxpos + snpsloc$pos;
+      
+      mch = match(rownames(log_reads), geneloc$geneid, nomatch = 0L)
+      stopifnot(all(mch != 0L))
+      gene_loc = geneloc$singlepos[mch];
+      rm(mch);
+      
+      mch = match(rownames(snps), snpsloc$SNP, nomatch = 0L)
+      stopifnot(all(mch != 0L))
+      snps_loc = snpsloc$singlepos[mch];
+      rm(mch);
+      
+      rm(maxpos, chrset);
+    }
+    
+    # reorder genes / SNPs
+    if( is.unsorted(gene_loc) ) {
+      ord = sort.list( gene_loc );
+      log_reads = log_reads[ord, ];
+      gene_loc = gene_loc[ord];
+      rm(ord);
+    }
+    
+    if( is.unsorted(snps_loc) ) {
+      ord = sort.list( snps_loc );
+      snps = snps[ord, ];
+      snps_loc = snps_loc[ord];
+      rm(ord);
+    }
+    
+    # Making directory for filematrices and going there
+    if (!dir.exists(file.path(saveDir, "filematrices"))) {
+      dir.create(file.path(saveDir, "filematrices"))
+    }
+    setwd(file.path(saveDir, "filematrices"))
+    
+    # Save gene_loc, snps_loc
+    fm = fm.create.from.matrix('gene_loc', gene_loc)
+    close(fm);
+    fm = fm.create.from.matrix('snps_loc', snps_loc)
+    close(fm);
+    
+    
+    # Save SNPs in a filematrix
+    fm = fm.create('snps', nrow = ncol(snps), ncol = nrow(snps), type = 'integer', size = 2);
+    
+    step1 = 100000;
+    mm = nrow(snps);
+    nsteps = ceiling(mm/step1);
+    for( part in 1:nsteps ) { # part = 1
+      if (verbose)
+        cat( part, 'of', nsteps, '\n');
+      fr = (part-1)*step1 + 1;
+      to = min(part*step1, mm);
+      
+      fm[,fr:to] = t(snps[fr:to,])*1000;
+      gc();
+    }
+    rm(part, step1, mm, nsteps, fr, to);
+    
+    colnames(fm) = rownames(snps);
+    rownames(fm) = colnames(snps);
+    close(fm)
+    
+    # Save genes 
+    fm = fm.create.from.matrix('gene', t(log_reads))
+    close(fm)
+    
+    # Save cvrt 
+    fm = fm.create.from.matrix('cvrt', t(cvrts))
+    close(fm)
+    
+    # Re-setting working directory
+    setwd(saveDir)
   }
-  
-  # reorder genes / SNPs
-  if( is.unsorted(gene_loc) ) {
-    ord = sort.list( gene_loc );
-    log_reads = log_reads[ord, ];
-    gene_loc = gene_loc[ord];
-    rm(ord);
-  }
-  
-  if( is.unsorted(snps_loc) ) {
-    ord = sort.list( snps_loc );
-    snps = snps[ord, ];
-    snps_loc = snps_loc[ord];
-    rm(ord);
-  }
-  
-  # Making directory for filematrices and going there
-  if (!dir.exists(file.path(saveDir, "filematrices"))) {
-    dir.create(file.path(saveDir, "filematrices"))
-  }
-  setwd(file.path(saveDir, "filematrices"))
-  
-  # Save gene_loc, snps_loc
-  fm = fm.create.from.matrix('gene_loc', gene_loc)
-  close(fm);
-  fm = fm.create.from.matrix('snps_loc', snps_loc)
-  close(fm);
-  
-  
-  # Save SNPs in a filematrix
-  fm = fm.create('snps', nrow = ncol(snps), ncol = nrow(snps), type = 'integer', size = 2);
-  
-  step1 = 100000;
-  mm = nrow(snps);
-  nsteps = ceiling(mm/step1);
-  for( part in 1:nsteps ) { # part = 1
-    if (verbose)
-      cat( part, 'of', nsteps, '\n');
-    fr = (part-1)*step1 + 1;
-    to = min(part*step1, mm);
-    
-    fm[,fr:to] = t(snps[fr:to,])*1000;
-    gc();
-  }
-  rm(part, step1, mm, nsteps, fr, to);
-  
-  colnames(fm) = rownames(snps);
-  rownames(fm) = colnames(snps);
-  close(fm)
-  
-  # Save genes 
-  fm = fm.create.from.matrix('gene', t(log_reads))
-  close(fm)
-  
-  # Save cvrt 
-  fm = fm.create.from.matrix('cvrt', t(cvrts))
-  close(fm)
-  
-  # Re-setting working directory
-  setwd(saveDir)
   
   if (returnData) {
-    return(list("snps" = snps, "genes" = genes, "cvrts" = cvrts,
-                "geneloc" = genelocs, "snploc" = snplocs))
+    return(list("snps" = snps, "gene" = genes, "cvrt" = cvrts,
+                "gene_loc" = genelocs, "snps_loc" = snplocs))
   }
   
 }

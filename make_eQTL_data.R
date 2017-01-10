@@ -3,8 +3,8 @@
 # 
 # Arguments:
 #   n - number of samples
-#   ngene - number of genes (default = 1000)
-#   nsnp - number of snps (default = 10000)
+#   ngene - number of genes (default = 5000)
+#   nsnp - number of snps (default = 500000)
 #   ncov - number of covariates (default = 10)
 #   p - reference allele probability (default = .2)
 #   saveDir - directory in which to save data files (default = cwd)
@@ -24,7 +24,7 @@
 
 require(filematrix)
 
-make_eQTL_data <- function (n, ngene = 1000, nsnp = 10000, ncov = 10, p = 0.2, 
+make_eQTL_data <- function (n, ngene = 5000, nsnp = 500000, ncov = 10, p = 0.2, 
                             saveDir = getwd(), returnData = FALSE, fmat = FALSE,
                             verbose = FALSE) { 
   
@@ -61,12 +61,13 @@ make_eQTL_data <- function (n, ngene = 1000, nsnp = 10000, ncov = 10, p = 0.2,
   rownames(snps) <- 1:nsnp
   rownames(cvrts) <- 1:ncov
   colnames(genes) <- colnames(snps) <- colnames(cvrts) <- 1:n
+  genes1 <- floor(seq(50000, 25e7, length.out = ngene))
   geneloc <- data.frame("geneid" = rownames(genes),
                         "chrm_probe" = rep(1, ngene),
-                        "s1" = c(1:ngene) * 10, "s2" = c(1:ngene) * 10)
+                        "s1" = genes1, "s2" = genes1)
   snpsloc <- data.frame("SNP" = rownames(snps),
                         "chrm_snp" = rep(1, nsnp),
-                        "pos" = 1:nsnp)
+                        "pos" = floor(seq(500, 25e7, length.out = nsnp)))
   
   # Filtering gene data
   rpkm_counts <- rowSums(genes > 0.1)
